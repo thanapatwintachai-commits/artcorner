@@ -50,10 +50,12 @@ def show_summary(store):
         role = user.get("role", "?")
         roles[role] = roles.get(role, 0) + 1
     revenue = 0.0
+    commission = 0.0  # ค่าคอมมิชชันที่แอดมินได้จากออเดอร์ที่ชำระแล้ว
     buyers = set()  # set: ผู้ซื้อที่ไม่ซ้ำกัน
     for order in data["orders"].values():
         if not order.get("cancelled") and order.get("status", 0) >= 1:
             revenue += float(order.get("total", 0))
+            commission += float(order.get("cut", 0))
             buyers.add(order.get("uid"))
     rent = 0.0  # ค่าพื้นที่ขายที่แอดมินอนุมัติแล้ว (สมัครใหม่ + ต่ออายุ)
     for app in data["apps"].values():
@@ -62,6 +64,7 @@ def show_summary(store):
     print("ผู้ใช้ทั้งหมด:", len(data["users"]), roles)
     print("ศิลปิน: %d   ผลงาน: %d   คำสั่งซื้อ: %d" % (len(data["artists"]), len(data["works"]), len(data["orders"])))
     print("ยอดขายที่ชำระแล้ว: %.2f บาท จากผู้ซื้อ %d คน" % (revenue, len(buyers)))
+    print("ค่าคอมมิชชันจากออเดอร์: %.2f บาท" % commission)
     print("รายได้ค่าพื้นที่ขาย: %.2f บาท" % rent)
 
 

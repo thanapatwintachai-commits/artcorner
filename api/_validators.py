@@ -11,6 +11,8 @@ RENT_FEE = 100   # ค่าพื้นที่ขายของศิลป�
 RENT_DAYS = 30   # อายุสิทธิ์ต่อการจ่าย 1 ครั้ง (วัน)
 RENT_KINDS = ("new", "renew")  # สมัครใหม่ / ต่ออายุ
 SLIP_MAX = 850000  # ขนาดข้อความรูปสลิปสูงสุด (ตัวอักษร)
+COMM_DEFAULT = 10  # ค่าคอมมิชชันตั้งต้น (% ของราคาผลงาน ไม่รวมค่าส่ง)
+COMM_MAX = 50      # ตั้งได้สูงสุด (%)
 
 
 class ValidationError(Exception):
@@ -128,3 +130,13 @@ def rent_active(artist, now_ms):
     if until is None:
         return True
     return is_number(until) and until >= now_ms
+
+
+def valid_rate(rate):
+    """อัตราค่าคอมมิชชันต้องเป็นจำนวนเต็ม 0 ถึง COMM_MAX เปอร์เซ็นต์"""
+    return is_int(rate) and 0 <= rate <= COMM_MAX
+
+
+def calc_commission(base, rate):
+    """ค่าคอมมิชชัน (บาท) = base * rate / 100 ปัดเศษครึ่งขึ้น (ต้องตรงกับสูตรฝั่งหน้าเว็บ)"""
+    return int(base * rate / 100 + 0.5)

@@ -7,8 +7,8 @@ import json
 import time
 
 from _auth import own_view, public_view
-from _validators import (PHONE_RE, RENT_FEE, ROLES, fail, is_int, is_number, rent_active,
-                         valid_rent_kind, valid_slip)
+from _validators import (COMM_DEFAULT, PHONE_RE, RENT_FEE, ROLES, calc_commission, fail, is_int,
+                         is_number, rent_active, valid_rate, valid_rent_kind, valid_slip)
 
 COLS = ("works", "artists", "users", "orders", "coms", "reviews",
         "apps", "likes", "follows", "logs", "settings")
@@ -17,6 +17,12 @@ SHIP = 60  # ค่าส่งคงที่ (บาท)
 
 
 # ---------- ตัวช่วยเล็กๆ ----------
+def current_rate(all_data):
+    """อัตราค่าคอมมิชชันปัจจุบันจากตั้งค่า (ไม่มีหรือไม่ถูกต้องใช้ค่าตั้งต้น)"""
+    rate = (all_data.get("settings") or {}).get("comm")
+    return rate if valid_rate(rate) else COMM_DEFAULT
+
+
 def dumps(value):
     """JSON แบบเรียงคีย์ ใช้เปรียบเทียบความเท่ากันของข้อมูล"""
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -108,6 +114,7 @@ def view(all_data, me):
             "cats": st.get("cats") or DEFAULT_CATS,
             "wm": st.get("wm") or {"text": "ArtCorner", "op": 0.35},
             "qr": st.get("qr") or "",
+            "comm": current_rate(all_data),
         },
     }
 
@@ -248,6 +255,7 @@ def rule_orders(c):
                     or (me.get("artist") and w.get("artist") == me.get("artist"))):
                 fail("ไฟล์ดิจิทัลไม่พร้อมขาย")
             total += number(w["digital"].get("price"))
+        base = total  # ราคาผลงานก่อนบวกค่าส่ง ใช้คิดค่าคอมมิชชัน
         if items:
             total += SHIP
         if v.get("com"):
@@ -256,10 +264,14 @@ def rule_orders(c):
                     or not com_now or not num_is(com_now.get("status"), 2) or items or downloads):
                 fail("งานจ้างไม่ถูกต้อง")
             total = number(com["quote"].get("price"))
+            base = total
         elif not items and not downloads:
             fail("คำสั่งซื้อว่าง")
         if not num_is(v.get("total"), total):
             fail("ยอดรวมไม่ตรงกับราคาจริง")
+        rate = current_rate(c.all)
+        if not num_is(v.get("rate"), rate) or not num_is(v.get("cut"), calc_commission(base, rate)):
+            fail("ค่าคอมมิชชันไม่ตรงกับอัตราปัจจุบัน กรุณาทำรายการใหม่")
         return v
 
     if old.get("uid") != me["id"]:
@@ -453,6 +465,9 @@ def rule_settings(c):
     elif c.id == "qr":
         if not isinstance(v, str) or len(v) > 600000:
             fail("รูป QR ไม่ถูกต้อง")
+    elif c.id == "comm":
+        if not valid_rate(v):
+            fail("อัตราค่าคอมมิชชันต้องเป็นจำนวนเต็ม 0-50")
     else:
         fail("ไม่รู้จักค่าตั้งนี้")
     return v
