@@ -7,6 +7,10 @@ import re
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PHONE_RE = re.compile(r"^0\d{9}$")
 ROLES = ("admin", "staff", "customer")  # tuple: ลำดับและค่าคงที่ ห้ามแก้ไข
+RENT_FEE = 100   # ค่าพื้นที่ขายของศิลปิน (บาทต่อเดือน)
+RENT_DAYS = 30   # อายุสิทธิ์ต่อการจ่าย 1 ครั้ง (วัน)
+RENT_KINDS = ("new", "renew")  # สมัครใหม่ / ต่ออายุ
+SLIP_MAX = 850000  # ขนาดข้อความรูปสลิปสูงสุด (ตัวอักษร)
 
 
 class ValidationError(Exception):
@@ -102,3 +106,25 @@ def valid_password(password):
 def valid_role(role):
     """บทบาทต้องเป็น admin / staff / customer เท่านั้น"""
     return role in ROLES
+
+
+def valid_slip(data):
+    """สลิปต้องเป็นรูปภาพ (data URL) และขนาดไม่ใหญ่เกินกำหนด"""
+    if not isinstance(data, str):
+        return False
+    return data.startswith("data:image/") and 100 < len(data) <= SLIP_MAX
+
+
+def valid_rent_kind(kind):
+    """ชนิดใบสมัครต้องเป็น new หรือ renew เท่านั้น"""
+    return kind in RENT_KINDS
+
+
+def rent_active(artist, now_ms):
+    """ค่าพื้นที่ขายยังไม่หมดอายุหรือไม่ (ศิลปินเก่าที่ไม่มีวันหมดอายุนับว่ายังใช้ได้)"""
+    if not artist:
+        return False
+    until = artist.get("until")
+    if until is None:
+        return True
+    return is_number(until) and until >= now_ms

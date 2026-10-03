@@ -4,9 +4,11 @@
 * authorize()  ตรวจทุกคำสั่งเขียนก่อนบันทึก ถ้าไม่ผ่านจะโยน ValidationError พร้อมข้อความภาษาไทย
 """
 import json
+import time
 
 from _auth import own_view, public_view
-from _validators import PHONE_RE, ROLES, fail, is_int, is_number
+from _validators import (PHONE_RE, RENT_FEE, ROLES, fail, is_int, is_number, rent_active,
+                         valid_rent_kind, valid_slip)
 
 COLS = ("works", "artists", "users", "orders", "coms", "reviews",
         "apps", "likes", "follows", "logs", "settings")
@@ -201,6 +203,8 @@ def rule_works(c):
         if not c.old:
             if c.v.get("approval") != "pending" or c.v.get("status") != "available":
                 fail("ผลงานใหม่ต้องรอแอดมินอนุมัติ")
+            if not rent_active(c.all.get("artists", {}).get(me_artist), time.time() * 1000):
+                fail("ค่าพื้นที่ขายหมดอายุแล้ว กรุณาต่ออายุ (%d บาท/เดือน) ก่อนอัปโหลดผลงานใหม่" % RENT_FEE)
             return c.v
         if c.v.get("status") != c.old.get("status"):
             fail("เปลี่ยนสถานะการขายไม่ได้")
@@ -371,9 +375,18 @@ def rule_apps(c):
         return result
     if not old:
         pending = any(a.get("uid") == me["id"] and a.get("status") == "pending" for a in values(c.all, "apps"))
-        if (v.get("uid") != me["id"] or v.get("status") != "pending" or me.get("role") != "customer"
-                or me.get("artist") or pending):
+        kind = v.get("kind")
+        if not valid_rent_kind(kind):
             fail("ใบสมัครไม่ถูกต้อง")
+        # สมัครใหม่ = ยังไม่เป็นศิลปิน / ต่ออายุ = เป็นศิลปินอยู่แล้ว
+        has_artist = bool(me.get("artist"))
+        if (v.get("uid") != me["id"] or v.get("status") != "pending" or me.get("role") != "customer"
+                or has_artist != (kind == "renew") or pending):
+            fail("ใบสมัครไม่ถูกต้อง")
+        if not num_is(v.get("fee"), RENT_FEE):
+            fail("ค่าพื้นที่ขายต้องเป็น %d บาท" % RENT_FEE)
+        if not valid_slip(v.get("slip")):
+            fail("กรุณาแนบสลิปค่าพื้นที่ขาย %d บาท เป็นไฟล์รูปภาพ" % RENT_FEE)
         return v
     fail("ไม่มีสิทธิ์แก้ไขใบสมัคร")
 

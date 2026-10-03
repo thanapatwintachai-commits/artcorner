@@ -44,7 +44,7 @@ def ask(prompt):
 
 def show_summary(store):
     """dashboard แบบข้อความ: นับผู้ใช้ตามบทบาท, ผลงาน, ยอดขายรวม"""
-    data = store.all(["users", "works", "orders", "artists"])
+    data = store.all(["users", "works", "orders", "artists", "apps"])
     roles = {}  # dict: บทบาท -> จำนวน
     for user in data["users"].values():
         role = user.get("role", "?")
@@ -55,9 +55,14 @@ def show_summary(store):
         if not order.get("cancelled") and order.get("status", 0) >= 1:
             revenue += float(order.get("total", 0))
             buyers.add(order.get("uid"))
+    rent = 0.0  # ค่าพื้นที่ขายที่แอดมินอนุมัติแล้ว (สมัครใหม่ + ต่ออายุ)
+    for app in data["apps"].values():
+        if app.get("status") == "approved" and app.get("fee"):
+            rent += float(app.get("fee", 0))
     print("ผู้ใช้ทั้งหมด:", len(data["users"]), roles)
     print("ศิลปิน: %d   ผลงาน: %d   คำสั่งซื้อ: %d" % (len(data["artists"]), len(data["works"]), len(data["orders"])))
     print("ยอดขายที่ชำระแล้ว: %.2f บาท จากผู้ซื้อ %d คน" % (revenue, len(buyers)))
+    print("รายได้ค่าพื้นที่ขาย: %.2f บาท" % rent)
 
 
 def show_users(store):
