@@ -8,7 +8,7 @@ import time
 
 from _auth import own_view, public_view
 from _validators import (COMM_DEFAULT, PHONE_RE, RENT_FEE, ROLES, calc_commission, fail, is_int,
-                         is_number, rent_active, valid_rate, valid_rent_kind, valid_slip)
+                         is_number, rent_active, valid_rate, valid_rent_kind, valid_slip, valid_tracking)
 
 COLS = ("works", "artists", "users", "orders", "coms", "reviews",
         "apps", "likes", "follows", "logs", "settings")
@@ -98,7 +98,14 @@ def view(all_data, me):
 
     works = [w for w in values(all_data, "works")
              if mgr or w.get("approval") == "approved" or (my_artist and w.get("artist") == my_artist)]
-    orders = [o for o in values(all_data, "orders") if mgr or (me and o.get("uid") == my_id)]
+    orders = []
+    for o in values(all_data, "orders"):
+        if mgr or (me and o.get("uid") == my_id):
+            orders.append(o)
+        elif my_artist:  # ศิลปินเห็นเฉพาะออเดอร์ที่มีผลงานของตัวเอง และชำระเงินแล้ว
+            row = artist_order_view(o, my_artist, all_data.get("works", {}))
+            if row:
+                orders.append(row)
     coms = [c for c in values(all_data, "coms")
             if mgr or (me and (c.get("uid") == my_id or (my_artist and c.get("artist") == my_artist)))]
     apps = [a for a in values(all_data, "apps") if mgr or (me and a.get("uid") == my_id)]
@@ -117,6 +124,20 @@ def view(all_data, me):
             "comm": current_rate(all_data),
         },
     }
+
+
+def artist_order_view(order, my_artist, works):
+    """ออเดอร์ที่ศิลปินต้องจัดส่ง: เห็นเฉพาะผลงานของตัวเอง + ที่อยู่ผู้รับ (ไม่เห็นสลิป ยอดเงิน ค่าคอมฯ)"""
+    mine = [i for i in (order.get("items") or []) if (works.get(i) or {}).get("artist") == my_artist]
+    if not mine or order.get("cancelled") or not num_ge(order.get("status"), 1):
+        return None
+    ships = order.get("ships") if isinstance(order.get("ships"), dict) else {}
+    row = {"id": order.get("id"), "date": order.get("date"), "items": mine, "name": order.get("name"),
+           "phone": order.get("phone"), "addr": order.get("addr"), "status": order.get("status"),
+           "tracking": order.get("tracking") or "", "mine": 1}
+    if my_artist in ships:
+        row["ships"] = {my_artist: ships[my_artist]}
+    return row
 
 
 # ---------- ใครเขียนอะไรได้ (กติกาแยกตามคอลเลกชัน) ----------
@@ -226,10 +247,41 @@ def rule_works(c):
     fail("ไม่มีสิทธิ์แก้ไขผลงานนี้")
 
 
+def ship_by_artist(c):
+    """ศิลปินแจ้งจัดส่งผลงานของตัวเอง: รับเฉพาะเลขพัสดุของตัวเอง ที่เหลือใช้ข้อมูลเดิมในระบบ"""
+    me, old, v = c.me, c.old, c.v
+    my_artist = me.get("artist")
+    works = c.all.get("works", {})
+    owners = {(works.get(i) or {}).get("artist") for i in (old.get("items") or [])}
+    owners.discard(None)
+    if not my_artist or my_artist not in owners:
+        fail("ไม่มีสิทธิ์")
+    if not num_is(old.get("status"), 1) or old.get("cancelled"):
+        fail("จัดส่งไม่ได้ในสถานะนี้ (ต้องยืนยันการชำระเงินแล้วและยังไม่จัดส่ง)")
+    sent = old.get("ships") if isinstance(old.get("ships"), dict) else {}
+    if my_artist in sent:
+        fail("คุณแจ้งจัดส่งออเดอร์นี้ไปแล้ว")
+    asked = v.get("ships") if isinstance(v.get("ships"), dict) else {}
+    mine = asked.get(my_artist)
+    tracking = mine.get("tracking") if isinstance(mine, dict) else None
+    if not valid_tracking(tracking):
+        fail("เลขพัสดุต้องเป็นตัวอักษร/ตัวเลข 6-30 ตัว")
+    ships = dict(sent)
+    ships[my_artist] = {"tracking": tracking.strip(), "t": int(time.time() * 1000)}
+    result = dict(old)
+    result["ships"] = ships
+    if owners <= set(ships):  # ศิลปินทุกคนในออเดอร์ส่งครบแล้ว -> สถานะ "จัดส่ง"
+        result["status"] = 2
+        result["tracking"] = ", ".join(ships[k]["tracking"] for k in sorted(ships))
+    return result
+
+
 def rule_orders(c):
     if c.dele:
         fail("ห้ามลบคำสั่งซื้อ")
     me, old, v = c.me, c.old, c.v
+    if old and not c.mgr and old.get("uid") != me["id"]:
+        return ship_by_artist(c)
     if old and v.get("uid") != old.get("uid"):
         fail("เปลี่ยนเจ้าของคำสั่งซื้อไม่ได้")
     if c.mgr:

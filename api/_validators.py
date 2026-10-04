@@ -11,6 +11,7 @@ RENT_FEE = 100   # ค่าพื้นที่ขายของศิลป�
 RENT_DAYS = 30   # อายุสิทธิ์ต่อการจ่าย 1 ครั้ง (วัน)
 RENT_KINDS = ("new", "renew")  # สมัครใหม่ / ต่ออายุ
 SLIP_MAX = 850000  # ขนาดข้อความรูปสลิปสูงสุด (ตัวอักษร)
+TRACK_RE = re.compile(r"^[A-Za-z0-9-]{6,30}$")
 COMM_DEFAULT = 10  # ค่าคอมมิชชันตั้งต้น (% ของราคาผลงาน ไม่รวมค่าส่ง)
 COMM_MAX = 50      # ตั้งได้สูงสุด (%)
 
@@ -140,3 +141,8 @@ def valid_rate(rate):
 def calc_commission(base, rate):
     """ค่าคอมมิชชัน (บาท) = base * rate / 100 ปัดเศษครึ่งขึ้น (ต้องตรงกับสูตรฝั่งหน้าเว็บ)"""
     return int(base * rate / 100 + 0.5)
+
+
+def valid_tracking(text):
+    """เลขพัสดุ: ตัวอักษรอังกฤษ/ตัวเลข/ขีด 6-30 ตัว (ตัดช่องว่างหัวท้ายก่อนตรวจ)"""
+    return isinstance(text, str) and TRACK_RE.match(text.strip()) is not None
